@@ -1,0 +1,255 @@
+# **Práctica 3**
+
+El ESP32 es un microcontrolador con capacidad de conexion WiFi y Bluetooth. En esta práctica, utilizamos la funcionalidad WiFi para generar una pagina web y para conectar la placa por Bluetooth a un telefono y poder saber la temperatura de nustra placa. 
+
+# Creacion página web
+
+## **Código Practica A**
+```cpp
+#include <WiFi.h>
+#include <WebServer.h>
+const char* ssid = "Nautilus";  
+const char* password = "20000Leguas"; 
+WebServer server(80);  
+void handle_root();
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Try Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected successfully");
+  Serial.print("Got IP: ");
+  Serial.println(WiFi.localIP());  
+  server.on("/", handle_root);  
+  server.begin();
+  Serial.println("HTTP server started");
+  delay(100);
+}
+void loop() {
+  server.handleClient();
+}
+String HTML = "<!DOCTYPE html>\
+<html>\
+<body>\
+<h1>My Primera Pagina con ESP32 - Station Mode &#128522;</h1>\
+</body>\
+</html>";
+void handle_root() {
+  server.send(200, "text/html", HTML);
+}
+```
+
+## **Resultados **
+**Salida en el Monitor :**
+   - Mensajes de conexión a la red WiFi
+   - Dirección IP de la pagina web
+
+**Como poder ver la pagina web:**
+   - Se entra introduciendo la dirección IP en un navegador
+   - Se muestra una página HTML con el mensaje que hemos escrito antes
+   
+![Whats-App-Image-2025-03-25-at-11-33-12.jpg](https://i.postimg.cc/TYRZFK47/Whats-App-Image-2025-03-25-at-11-33-12.jpg)
+
+
+
+## **Código Modificado**
+Ahora hemos modificado el codigo para que la pagina web sea mas colorida y vistosa. 
+ 
+```cpp
+#include <WiFi.h>
+#include <WebServer.h>  
+const char* ssid = "Nautilus";  
+const char* password = "20000Leguas";  
+WebServer server(80);  
+
+String HTML = "<!DOCTYPE html>\
+<html lang=\"es\">\
+<head>\
+  <meta charset=\"UTF-8\">\
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+  <title>Animación de Colores</title>\
+  <style>\
+    body {\
+      font-family: Arial, sans-serif;\
+      margin: 0;\
+      padding: 0;\
+      height: 100vh;\
+      display: flex;\
+      justify-content: center;\
+      align-items: center;\
+      text-align: center;\
+      animation: colorChange 5s infinite;\
+    }\
+    h1 {\
+      font-size: 3em;\
+      color: #fff;\
+      animation: textAnimation 3s ease-in-out infinite;\
+    }\
+    p {\
+      font-size: 1.5em;\
+      color: #fff;\
+      animation: textFade 3s ease-in-out infinite;\
+    }\
+    @keyframes colorChange {\
+      0% { background-color: #ff6347; }\
+      25% { background-color: #4682b4; }\
+      50% { background-color: #32cd32; }\
+      75% { background-color: #ffd700; }\
+      100% { background-color: #ff6347; }\
+    }\
+    @keyframes textAnimation {\
+      0% { transform: translateY(-30px); opacity: 0; }\
+      50% { transform: translateY(0); opacity: 1; }\
+      100% { transform: translateY(30px); opacity: 0; }\
+    }\
+    @keyframes textFade {\
+      0% { opacity: 0; }\
+      50% { opacity: 1; }\
+      100% { opacity: 0; }\
+    }\
+  </style>\
+</head>\
+<body>\
+  <div>\
+    <h1>¡Bienvenido a mi página!</h1>\
+    <p>Este es un ejemplo de animación con cambios de color y textos en movimiento.</p>\
+    <p>¡ESP32 está en acción!</p>\
+  </div>\
+</body>\
+</html>";
+
+void handle_root() {
+  server.send(200, "text/html", HTML);
+}
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Intentando conectar con WiFi...");
+  WiFi.disconnect();
+  delay(100);
+  WiFi.begin(ssid, password); 
+  int intentos = 0;
+
+  while (WiFi.status() != WL_CONNECTED && intentos < 20) { 
+    delay(1000);
+    Serial.print(".");
+    intentos++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi conectado");
+    Serial.print("IP del ESP32: ");
+    Serial.println(WiFi.localIP());
+
+    server.on("/", handle_root);  
+    server.begin();  
+    Serial.println("Servidor HTTP iniciado");
+  } else {
+    Serial.println("\nNo se pudo conectar a WiFi. Reiniciando...");
+    ESP.restart();  
+  }
+}
+void loop() {
+  server.handleClient();  
+}
+```
+
+ 
+# Conexion Bluetooth
+## **Código Practica B**
+```cpp
+#include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+BLEServer* pServer = NULL;
+BLECharacteristic* pCharacteristic = NULL;
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+
+float temperature = 0;
+unsigned long previousMillis = 0;
+const long interval = 2000; 
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+      Serial.println("Device connected"); }
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+      Serial.println("Device disconnected"); } };
+
+class CharacteristicCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      std::string value = pCharacteristic->getValue();
+      
+      if (value.length() > 0) {
+        Serial.println("Received data: ");
+        for (int i = 0; i < value.length(); i++) {
+          Serial.print(value[i]); }
+        Serial.println(); } } };
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Starting BLE application");
+  BLEDevice::init("ESP32-S3 Lulu _Alicia");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  pCharacteristic = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID,
+                      BLECharacteristic::PROPERTY_READ   |
+                      BLECharacteristic::PROPERTY_WRITE  |
+                      BLECharacteristic::PROPERTY_NOTIFY |
+                      BLECharacteristic::PROPERTY_INDICATE );
+
+  pCharacteristic->addDescriptor(new BLE2902());
+  pCharacteristic->setCallbacks(new CharacteristicCallbacks());
+  pService->start();
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+  
+  Serial.println("BLE service started. Waiting for a client connection..."); }
+void loop() {
+  unsigned long currentMillis = millis();
+  
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    
+    temperature = random(2000, 3000) / 100.0;
+    
+    if (deviceConnected) {
+      String tempStr = String(temperature, 2);
+      pCharacteristic->setValue(tempStr.c_str());
+      pCharacteristic->notify();
+      Serial.print("Temperature: ");
+      Serial.println(tempStr); }}
+  if (!deviceConnected && oldDeviceConnected) {
+    delay(500); 
+    pServer->startAdvertising(); 
+    Serial.println("Started advertising again");
+    oldDeviceConnected = deviceConnected; }
+  if (deviceConnected && !oldDeviceConnected) {
+    oldDeviceConnected = deviceConnected; }
+  delay(10); }
+```
+
+## **Resultados **
+Hemos podido conectar nuestra placa al telefono movil con la aplicacion ble scanner la cual nos muestra un grafico de la temperatura a la que se encuentra nuestra placa. 
+
+![Captura-de-pantalla-2025-03-31-200912.png](https://i.postimg.cc/T3kGCV2J/Captura-de-pantalla-2025-03-31-200912.png)
+
+
+
+> Written with [StackEdit](https://stackedit.io/).
